@@ -17,6 +17,21 @@ export const MEMORY_SIZE_OPTIONS = [
 
 export type MemorySize = (typeof MEMORY_SIZE_OPTIONS)[number]["id"];
 
+/** Bits draws eight cells per byte. Bytes draws one cell per byte. */
+export const MEMORY_UNIT_OPTIONS = [
+  { id: "bits", label: "Bits" },
+  { id: "bytes", label: "Bytes" },
+] as const;
+
+export type MemoryUnit = (typeof MEMORY_UNIT_OPTIONS)[number]["id"];
+
+export const ADDRESS_BASE_OPTIONS = [
+  { id: "hex", label: "Hex" },
+  { id: "decimal", label: "Decimal" },
+] as const;
+
+export type AddressBase = (typeof ADDRESS_BASE_OPTIONS)[number]["id"];
+
 import type { CDataType } from "@/lib/c-parser/c-types";
 
 /**
@@ -41,6 +56,11 @@ export type CVariable = {
   type: CDataType;
   value: string | null;
   sizeInBytes: number;
+  elementSize: number;
+  /** Number of elements, or null for a scalar. */
+  arrayLength: number | null;
+  /** Explicit element initializers. Elements past the end are zero. Null when uninitialized. */
+  elements: readonly string[] | null;
   startAddress: number;
   endAddress: number;
   lineNumber: number;

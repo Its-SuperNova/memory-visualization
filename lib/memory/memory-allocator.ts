@@ -39,7 +39,7 @@ export function allocateVariables(
   const failed: string[] = [];
 
   for (const variable of pending) {
-    const start = findStart(variable.sizeInBytes, memorySize, occupied, hashMix(seed, variable.name));
+    const start = findStart(variable.sizeInBytes, variable.elementSize, memorySize, occupied, hashMix(seed, variable.name));
     if (start === null) {
       failed.push(variable.name);
       continue;
@@ -73,6 +73,9 @@ function reuseAllocation(
     type: variable.type,
     value: variable.value,
     sizeInBytes: variable.sizeInBytes,
+    elementSize: variable.elementSize,
+    arrayLength: variable.arrayLength,
+    elements: variable.elements,
     endAddress: end,
     lineNumber: variable.lineNumber,
     column: variable.column,
@@ -94,6 +97,9 @@ function toVariable(
     type: variable.type,
     value: variable.value,
     sizeInBytes: variable.sizeInBytes,
+    elementSize: variable.elementSize,
+    arrayLength: variable.arrayLength,
+    elements: variable.elements,
     startAddress: start,
     endAddress: start + variable.sizeInBytes - 1,
     lineNumber: variable.lineNumber,
@@ -118,11 +124,18 @@ function takeColor(used: Set<number>) {
   return variableColor(index);
 }
 
-function findStart(size: number, memorySize: number, occupied: readonly Interval[], hash: number): number | null {
+function findStart(
+  size: number,
+  elementSize: number,
+  memorySize: number,
+  occupied: readonly Interval[],
+  hash: number,
+): number | null {
   if (size <= 0 || size > memorySize) return null;
-  const aligned = scanStarts(size, memorySize, occupied, hash, Math.min(size, 8));
+  const alignment = Math.max(1, Math.min(elementSize, 8));
+  const aligned = scanStarts(size, memorySize, occupied, hash, alignment);
   if (aligned !== null) return aligned;
-  if (size === 1) return null;
+  if (alignment === 1) return null;
   return scanStarts(size, memorySize, occupied, hash, 1);
 }
 

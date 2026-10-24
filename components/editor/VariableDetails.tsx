@@ -5,16 +5,16 @@ import { Eye } from "lucide-react";
 
 import { VariableRow } from "@/components/editor/VariableRow";
 import { Button } from "@/components/ui/button";
-import { formatVariableBinary } from "@/lib/c-parser/binary-value";
-import { formatHexAddress } from "@/lib/memory/address-utils";
-import type { ParseIssue } from "@/lib/c-parser/c-types";
+import { elementValue, formatElementBinary, formatVariableBinary } from "@/lib/c-parser/binary-value";
+import { formatAddress, formatAddressRange, type AddressFormat } from "@/lib/memory/address-utils";
+import { formatCType, type ParseIssue } from "@/lib/c-parser/c-types";
 import type { CVariable } from "@/lib/memory/memory-types";
 
 type VariableDetailsProps = {
   variables: readonly CVariable[];
   issues: readonly ParseIssue[];
   allocationError: string | null;
-  digits: number;
+  addressFormat: AddressFormat;
   selectedVariableId: string | null;
   onSelect: (variable: CVariable) => void;
   onShowAll: () => void;
@@ -26,7 +26,7 @@ export function VariableDetails({
   variables,
   issues,
   allocationError,
-  digits,
+  addressFormat,
   selectedVariableId,
   onSelect,
   onShowAll,
@@ -61,20 +61,21 @@ export function VariableDetails({
       <div className="minimal-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain">
         {variables.length === 0 ? (
           <p className="px-3 py-2 text-xs leading-5 text-muted-foreground">
-            Declare a char, short, int, long, long long, float, or double to allocate memory.
+            Declare a char, short, int, long, long long, float, or double (or an array such as int marks[5]) to
+            allocate memory.
           </p>
         ) : showingAll ? (
           <ul>
             {variables.map((variable) => (
               <li key={variable.id} className="border-b border-border last:border-b-0">
-                <VariableRow variable={variable} digits={digits} selected={false} onSelect={onSelect} />
+                <VariableRow variable={variable} addressFormat={addressFormat} selected={false} onSelect={onSelect} />
               </li>
             ))}
           </ul>
         ) : (
           <VariableDetail
             variable={selected}
-            digits={digits}
+            addressFormat={addressFormat}
             visualizing={visualizerVariableId === selected.id}
             onToggleVisualizer={onToggleVisualizer}
           />
@@ -122,20 +123,23 @@ function TabButton({
 
 function VariableDetail({
   variable,
-  digits,
+  addressFormat,
   visualizing,
   onToggleVisualizer,
 }: {
   variable: CVariable;
-  digits: number;
+  addressFormat: AddressFormat;
   visualizing: boolean;
   onToggleVisualizer: (variable: CVariable) => void;
 }) {
-  const address =
-    variable.startAddress === variable.endAddress
-      ? formatHexAddress(variable.startAddress, digits)
-      : `${formatHexAddress(variable.startAddress, digits)} – ${formatHexAddress(variable.endAddress, digits)}`;
-  const binary = formatVariableBinary(variable.type, variable.value, variable.sizeInBytes);
+  const hex = addressFormat.base === "hex";
+  const address = formatAddressRange(variable.startAddress, variable.endAddress, addressFormat);
+  const otherAddress = formatAddressRange(variable.startAddress, variable.endAddress, {
+    ...addressFormat,
+    base: hex ? "decimal" : "hex",
+  });
+  const isArray = variable.arrayLength !== null;
+  const binary = isArray ? null : formatVariableBinary(variable.type, variable.value, variable.sizeInBytes);
 
   return (
     <div className="px-3 py-2">
@@ -154,7 +158,13 @@ function VariableDetail({
         </Button>
       </p>
       <dl className="mt-2 space-y-1.5">
-        <Detail label="Type" value={variable.type} />
+        <Detail label="Type" value={formatCType(variable.type, variable.arrayLength)} />
+        {variable.arrayLength !== null ? (
+          <>
+            <Detail label="Elements" value={String(variable.arrayLength)} />
+            <Detail label="Element Size" value={formatBytes(variable.elementSize)} />
+          </>
+        ) : null}
         <Detail label="Value" value={variable.value === null ? "Uninitialized" : variable.value} />
         {binary ? (
           <div>
@@ -162,19 +172,65 @@ function VariableDetail({
             <dd className="mt-0.5 font-mono text-[11px] leading-4 break-all whitespace-pre-wrap text-foreground">{binary}</dd>
           </div>
         ) : null}
-        <Detail label="Size" value={variable.sizeInBytes === 1 ? "1 Byte" : `${variable.sizeInBytes} Bytes`} />
+        <Detail label="Size" value={formatBytes(variable.sizeInBytes)} />
         <Detail label="Address" value={address} />
+        <Detail label={hex ? "Decimal Address" : "Hex Address"} value={otherAddress} />
         <Detail label="Bits" value={String(variable.sizeInBytes * 8)} />
       </dl>
+      {variable.arrayLength !== null ? <ArrayElements variable={variable} addressFormat={addressFormat} /> : null}
     </div>
   );
+}
+
+const MAX_LISTED_ELEMENTS = 64;
+
+function ArrayElements({ variable, addressFormat }: { variable: CVariable; addressFormat: AddressFormat }) {
+  const length = variable.arrayLength ?? 0;
+  const shown = Math.min(length, MAX_LISTED_ELEMENTS);
+
+  return (
+    <div className="mt-3">
+      <p className="text-[11px] text-muted-foreground">Elements</p>
+      <ol className="mt-1 divide-y divide-border border border-border">
+        {Array.from({ length: shown }, (_, index) => {
+          const value = elementValue(variable, index);
+          const binary = formatElementBinary(variable, index);
+          return (
+            <li key={index} className="px-2 py-1">
+              <span className="flex items-baseline gap-2 font-mono text-[11px]">
+                <span className="text-foreground">
+                  {variable.name}[{index}]
+                </span>
+                <span className="text-muted-foreground">
+                  {formatAddress(variable.startAddress + index * variable.elementSize, addressFormat)}
+                </span>
+                <span className="ml-auto text-foreground">{value ?? "Uninitialized"}</span>
+              </span>
+              {binary ? (
+                <span className="block font-mono text-[11px] leading-4 break-all text-muted-foreground">{binary}</span>
+              ) : null}
+            </li>
+          );
+        })}
+      </ol>
+      {length > shown ? (
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          … {length - shown} more element{length - shown === 1 ? "" : "s"}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function formatBytes(bytes: number): string {
+  return bytes === 1 ? "1 Byte" : `${bytes} Bytes`;
 }
 
 function Detail({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-baseline justify-between gap-3">
       <dt className="text-[11px] text-muted-foreground">{label}</dt>
-      <dd className="font-mono text-xs text-foreground">{value}</dd>
+      <dd className="min-w-0 text-right font-mono text-xs break-all text-foreground">{value}</dd>
     </div>
   );
 }

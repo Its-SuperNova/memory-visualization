@@ -6,6 +6,7 @@ import { CodeEditor } from "@/components/editor/CodeEditor";
 import { VariableDetails } from "@/components/editor/VariableDetails";
 import { Button } from "@/components/ui/button";
 import type { ParseIssue } from "@/lib/c-parser/c-types";
+import type { AddressFormat } from "@/lib/memory/address-utils";
 import type { CVariable } from "@/lib/memory/memory-types";
 
 type CodePanelProps = {
@@ -14,7 +15,7 @@ type CodePanelProps = {
   variables: readonly CVariable[];
   issues: readonly ParseIssue[];
   allocationError: string | null;
-  digits: number;
+  addressFormat: AddressFormat;
   selectedVariableId: string | null;
   focusToken: number;
   onCodeChange: (code: string) => void;
@@ -32,7 +33,7 @@ export function CodePanel({
   variables,
   issues,
   allocationError,
-  digits,
+  addressFormat,
   selectedVariableId,
   focusToken,
   onCodeChange,
@@ -73,7 +74,7 @@ export function CodePanel({
               variables={variables}
               issues={issues}
               allocationError={allocationError}
-              digits={digits}
+              addressFormat={addressFormat}
               selectedVariableId={selectedVariableId}
               onSelect={onSelectVariable}
               onShowAll={onShowAllVariables}

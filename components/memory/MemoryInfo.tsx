@@ -2,16 +2,17 @@
 
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { getAddressRange } from "@/lib/memory/address-utils";
+import { getAddressRange, type AddressFormat } from "@/lib/memory/address-utils";
 import { formatInteger, formatMemorySize } from "@/lib/memory/memory-utils";
 import type { MemoryModel } from "@/lib/memory/memory-types";
 
 type MemoryInfoProps = {
   model: MemoryModel;
+  addressFormat: AddressFormat;
 };
 
-export function MemoryInfo({ model }: MemoryInfoProps) {
-  const range = getAddressRange(model.sizeInBytes);
+export function MemoryInfo({ model, addressFormat }: MemoryInfoProps) {
+  const range = getAddressRange(model.sizeInBytes, addressFormat.base);
 
   return (
     <section

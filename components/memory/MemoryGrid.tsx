@@ -6,6 +6,7 @@ import { MemoryCanvas } from "@/components/memory/MemoryCanvas";
 import { MemoryInfo } from "@/components/memory/MemoryInfo";
 import { SelectedByteInfo } from "@/components/memory/SelectedByteInfo";
 import { ViewToolbar } from "@/components/memory/ViewToolbar";
+import type { AddressFormat } from "@/lib/memory/address-utils";
 import { estimateLod, stepZoom, type MemoryLayout } from "@/lib/memory/geometry";
 import type { CVariable, HoveredBit, MemoryModel, PanPosition, ViewportSize, WorkspaceTool } from "@/lib/memory/memory-types";
 
@@ -18,7 +19,7 @@ type MemoryGridProps = {
   selectedByte: number | null;
   selectedVariableId: string | null;
   variables: readonly CVariable[];
-  hexDigits: number;
+  addressFormat: AddressFormat;
   viewport: ViewportSize;
   onViewportChange: (viewport: ViewportSize) => void;
   onPanChange: (pan: PanPosition) => void;
@@ -29,6 +30,8 @@ type MemoryGridProps = {
   onClearSelection: () => void;
   tool: WorkspaceTool;
   onToolChange: (tool: WorkspaceTool) => void;
+  mergeBytes: boolean;
+  onMergeBytesChange: (merge: boolean) => void;
   editorOpen: boolean;
 };
 
@@ -41,7 +44,7 @@ export function MemoryGrid({
   selectedByte,
   selectedVariableId,
   variables,
-  hexDigits,
+  addressFormat,
   viewport,
   onViewportChange,
   onPanChange,
@@ -52,9 +55,13 @@ export function MemoryGrid({
   onClearSelection,
   tool,
   onToolChange,
+  mergeBytes,
+  onMergeBytesChange,
   editorOpen,
 }: MemoryGridProps) {
-  const coarse = estimateLod(layout, viewport) !== "bits";
+  const bytesView = layout.unit === "bytes";
+  const lod = estimateLod(layout, viewport);
+  const coarse = bytesView ? lod === "rows" : lod !== "bits";
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -112,24 +119,31 @@ export function MemoryGrid({
         selectedByte={selectedByte}
         selectedVariableId={selectedVariableId}
         variables={variables}
-        hexDigits={hexDigits}
+        addressFormat={addressFormat}
         onViewportChange={onViewportChange}
         onPanChange={onPanChange}
         onHover={onHover}
         onSelectByte={onSelectByte}
         onZoomAt={onZoomAt}
         tool={tool}
+        mergeBytes={bytesView && mergeBytes}
       />
-      <ViewToolbar tool={tool} onToolChange={onToolChange} />
+      <ViewToolbar
+        tool={tool}
+        unit={layout.unit}
+        mergeBytes={mergeBytes}
+        onToolChange={onToolChange}
+        onMergeBytesChange={onMergeBytesChange}
+      />
       {coarse ? (
         <p className="pointer-events-none absolute top-3 left-4 text-xs text-muted-foreground">
-          Zoom in to inspect individual bits
+          Zoom in to inspect individual {bytesView ? "bytes" : "bits"}
         </p>
       ) : null}
       {editorOpen ? null : (
         <div className="pointer-events-none absolute inset-x-3 bottom-3 flex flex-wrap items-end justify-between gap-3">
-          <SelectedByteInfo byteAddress={selectedByte} digits={hexDigits} />
-          <MemoryInfo model={model} />
+          <SelectedByteInfo byteAddress={selectedByte} addressFormat={addressFormat} unit={layout.unit} />
+          <MemoryInfo model={model} addressFormat={addressFormat} />
         </div>
       )}
     </div>

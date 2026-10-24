@@ -1,22 +1,21 @@
 "use client";
 
 import { formatVariableBinary } from "@/lib/c-parser/binary-value";
-import { formatHexAddress } from "@/lib/memory/address-utils";
+import { formatCType } from "@/lib/c-parser/c-types";
+import { formatAddressRange, type AddressFormat } from "@/lib/memory/address-utils";
 import type { CVariable } from "@/lib/memory/memory-types";
 
 type VariableRowProps = {
   variable: CVariable;
-  digits: number;
+  addressFormat: AddressFormat;
   selected: boolean;
   onSelect: (variable: CVariable) => void;
 };
 
-export function VariableRow({ variable, digits, selected, onSelect }: VariableRowProps) {
-  const address =
-    variable.startAddress === variable.endAddress
-      ? formatHexAddress(variable.startAddress, digits)
-      : `${formatHexAddress(variable.startAddress, digits)} – ${formatHexAddress(variable.endAddress, digits)}`;
-  const binary = formatVariableBinary(variable.type, variable.value, variable.sizeInBytes);
+export function VariableRow({ variable, addressFormat, selected, onSelect }: VariableRowProps) {
+  const address = formatAddressRange(variable.startAddress, variable.endAddress, addressFormat);
+  const binary =
+    variable.arrayLength === null ? formatVariableBinary(variable.type, variable.value, variable.sizeInBytes) : null;
 
   return (
     <button
@@ -28,13 +27,13 @@ export function VariableRow({ variable, digits, selected, onSelect }: VariableRo
       <span className="flex items-center gap-2">
         <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: variable.stroke }} />
         <span className="font-mono text-xs font-medium text-foreground">{variable.name}</span>
-        <span className="text-[11px] text-muted-foreground">{variable.type}</span>
+        <span className="text-[11px] text-muted-foreground">{formatCType(variable.type, variable.arrayLength)}</span>
         <span className="font-mono text-[11px] text-muted-foreground">
           {variable.sizeInBytes === 1 ? "1 byte" : `${variable.sizeInBytes} bytes`}
         </span>
       </span>
       <span className="mt-0.5 block pl-4 font-mono text-[11px] text-foreground">{address}</span>
-      <span className="block pl-4 text-[11px] text-muted-foreground">
+      <span className="block pl-4 text-[11px] break-all text-muted-foreground">
         value: {variable.value === null ? "Uninitialized" : variable.value}
       </span>
       {binary ? (

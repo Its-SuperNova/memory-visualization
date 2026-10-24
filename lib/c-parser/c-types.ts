@@ -19,12 +19,24 @@ export const C_TYPE_SIZES: Record<CDataType, number> = {
 export type ParsedVariable = {
   name: string;
   type: CDataType;
+  /** Initializer as written, for example "20" or "{1, 2, 3}". */
   value: string | null;
   sizeInBytes: number;
+  /** Bytes of one element; equals sizeInBytes for a scalar. */
+  elementSize: number;
+  /** Number of elements, or null for a scalar. */
+  arrayLength: number | null;
+  /** Explicit element initializers. Elements past the end are zero. Null when uninitialized. */
+  elements: readonly string[] | null;
   lineNumber: number;
   column: number;
   endColumn: number;
 };
+
+/** "int" for a scalar, "int[5]" for an array. */
+export function formatCType(type: CDataType, arrayLength: number | null): string {
+  return arrayLength === null ? type : `${type}[${arrayLength}]`;
+}
 
 export type ParseIssue = {
   lineNumber: number;

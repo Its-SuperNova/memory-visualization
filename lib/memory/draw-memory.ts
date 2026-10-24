@@ -1,5 +1,5 @@
-import { variableBitString } from "@/lib/c-parser/binary-value";
-import { formatHexAddress } from "@/lib/memory/address-utils";
+import { elementBitString, elementValue } from "@/lib/c-parser/binary-value";
+import { formatAddress, type AddressFormat } from "@/lib/memory/address-utils";
 import { BITS_PER_BYTE, type MemoryPalette } from "@/lib/memory/memory-constants";
 import { bitIndexToByteAddress } from "@/lib/memory/memory-utils";
 import {
@@ -16,7 +16,9 @@ export type MemoryDrawState = {
   selectedByte: number | null;
   selectedVariableId: string | null;
   variables: readonly CVariable[];
-  hexDigits: number;
+  addressFormat: AddressFormat;
+  /** Bytes view only: draw each variable or array element as one box with its value. */
+  mergeBytes: boolean;
   fontFamily: string;
   colors: MemoryPalette;
 };
@@ -38,7 +40,8 @@ export function drawMemory(
   const range = visibleRange(layout, state.pan, width, height);
   if (range.endRow < range.startRow || range.endCol < range.startCol) return;
 
-  const lod = chooseLod(layout.bitSize, range.visibleBytes);
+  const lod = chooseLod(layout, range.visibleBytes);
+  const bytesView = layout.unit === "bytes";
   const hoveredByte =
     state.hoveredBitIndex === null ? null : bitIndexToByteAddress(state.hoveredBitIndex);
   const hoveredSlot =
@@ -52,7 +55,7 @@ export function drawMemory(
     drawBitGrid(ctx, layout, state.pan, range, hoveredByte, state.selectedByte, colors);
   }
 
-  drawAllocations(ctx, layout, state, range, lod, hoveredByte);
+  const nameChips = drawAllocations(ctx, layout, state, range, lod, hoveredByte);
 
   const hoveredVariable = hoveredByte === null ? null : variableAt(state.variables, hoveredByte);
   const selectedVariableByte =
@@ -63,16 +66,27 @@ export function drawMemory(
   if (state.selectedByte !== null && !selectedVariableByte) {
     drawByteHighlight(ctx, layout, state.pan, state.selectedByte, "selected", colors);
   }
-  if (hoveredByte !== null && hoveredSlot !== null) {
+  if (!bytesView && hoveredByte !== null && hoveredSlot !== null) {
     drawBitMarker(ctx, layout, state.pan, hoveredByte, hoveredSlot, colors);
   }
 
-  if (lod === "bits" && (layout.showAddress || layout.showBitPositions)) {
+  const detailed = lod === "bits" || (bytesView && lod === "bytes");
+  if (detailed && (layout.showAddress || layout.showBitPositions)) {
     drawLabels(ctx, layout, state, range, hoveredByte);
   }
   if (lod === "bits") {
     drawSelectedValueBits(ctx, layout, state, range);
   }
+  for (const chip of nameChips) {
+    drawVariableName(ctx, chip.label, chip.x, chip.y, chip.width, chip.stroke, colors.background, state.fontFamily);
+  }
+}
+
+type NameChip = { label: string; x: number; y: number; width: number; stroke: string };
+
+function elementLabel(variable: CVariable, index: number): string {
+  if (variable.arrayLength === null) return variable.name;
+  return index === 0 ? `${variable.name}[0]` : `[${index}]`;
 }
 
 function variableAt(variables: readonly CVariable[], address: number): CVariable | null {
@@ -89,10 +103,13 @@ function drawAllocations(
   range: ReturnType<typeof visibleRange>,
   lod: ReturnType<typeof chooseLod>,
   hoveredByte: number | null,
-): void {
-  if (state.variables.length === 0) return;
+): NameChip[] {
+  const chips: NameChip[] = [];
+  if (state.variables.length === 0) return chips;
   const gap = bitGap(layout.bitSize);
   const hoveredVariable = hoveredByte === null ? null : variableAt(state.variables, hoveredByte);
+
+  const merge = state.mergeBytes && layout.unit === "bytes" && lod === "bytes";
 
   for (const variable of state.variables) {
     const selected = variable.id === state.selectedVariableId;
@@ -101,6 +118,11 @@ function drawAllocations(
     const lastRow = Math.floor(variable.endAddress / layout.bytesPerRow);
     const rowStart = Math.max(firstRow, range.startRow);
     const rowEnd = Math.min(lastRow, range.endRow);
+
+    if (merge) {
+      drawMergedVariable(ctx, layout, state, range, variable, rowStart, rowEnd, selected, hovered, chips);
+      continue;
+    }
 
     for (let row = rowStart; row <= rowEnd; row += 1) {
       const rowByte = row * layout.bytesPerRow;
@@ -112,25 +134,101 @@ function drawAllocations(
         const x = state.pan.x + col * layout.byteStride;
         const y = state.pan.y + row * layout.rowStride + layout.labelBlock;
         const fill = selected ? variable.selectedFill : variable.fill;
+        const offset = address - variable.startAddress;
+        const elementIndex = Math.floor(offset / variable.elementSize);
+        const elementStart = offset % variable.elementSize === 0;
+        ctx.globalAlpha = variable.arrayLength !== null && elementIndex % 2 === 1 ? 0.6 : 1;
         if (lod === "bits") {
           fillAllocatedBits(ctx, x, y, layout.bitSize, gap, fill, variable.stroke, selected || hovered);
         } else {
           ctx.fillStyle = fill;
-          ctx.fillRect(x, y, layout.byteWidth, Math.max(layout.bitSize, 1));
+          ctx.fillRect(x, y, layout.byteWidth, Math.max(layout.cellHeight, 1));
           ctx.lineWidth = selected ? 1.5 : 1;
           ctx.strokeStyle = variable.stroke;
-          ctx.strokeRect(x + 0.5, y + 0.5, Math.max(0, layout.byteWidth - 1), Math.max(0, layout.bitSize - 1));
+          ctx.strokeRect(x + 0.5, y + 0.5, Math.max(0, layout.byteWidth - 1), Math.max(0, layout.cellHeight - 1));
         }
-        const showName =
-          address === variable.startAddress &&
-          (selected || hovered || layout.bitSize >= 20) &&
-          layout.bitSize >= 12;
+        ctx.globalAlpha = 1;
+        const showName = elementStart && (selected || hovered || layout.cellHeight >= 20) && layout.cellHeight >= 12;
         if (showName) {
-          drawVariableName(ctx, variable.name, x, y, layout.byteWidth, variable.stroke, state.colors.background, state.fontFamily);
+          chips.push({ label: elementLabel(variable, elementIndex), x, y, width: layout.byteWidth, stroke: variable.stroke });
         }
       }
     }
   }
+  return chips;
+}
+
+function drawMergedVariable(
+  ctx: CanvasRenderingContext2D,
+  layout: MemoryLayout,
+  state: MemoryDrawState,
+  range: ReturnType<typeof visibleRange>,
+  variable: CVariable,
+  rowStart: number,
+  rowEnd: number,
+  selected: boolean,
+  hovered: boolean,
+  chips: NameChip[],
+): void {
+  const size = variable.elementSize;
+  const fontSize = Math.floor(Math.max(10, Math.min(layout.cellHeight * 0.4, 16)));
+
+  for (let row = rowStart; row <= rowEnd; row += 1) {
+    const rowByte = row * layout.bytesPerRow;
+    const segmentStart = Math.max(variable.startAddress, rowByte);
+    const segmentEnd = Math.min(variable.endAddress, rowByte + layout.bytesPerRow - 1, layout.totalBytes - 1);
+    const firstIndex = Math.floor((segmentStart - variable.startAddress) / size);
+    const lastIndex = Math.floor((segmentEnd - variable.startAddress) / size);
+
+    for (let index = firstIndex; index <= lastIndex; index += 1) {
+      const elementStart = variable.startAddress + index * size;
+      const from = Math.max(segmentStart, elementStart);
+      const to = Math.min(segmentEnd, elementStart + size - 1);
+      const fromCol = from - rowByte;
+      const toCol = to - rowByte;
+      if (toCol < range.startCol || fromCol > range.endCol) continue;
+
+      const count = toCol - fromCol + 1;
+      const x = state.pan.x + fromCol * layout.byteStride;
+      const y = state.pan.y + row * layout.rowStride + layout.labelBlock;
+      const width = count * layout.byteWidth + (count - 1) * layout.byteGap;
+      const height = Math.max(layout.cellHeight, 1);
+
+      ctx.fillStyle = state.colors.background;
+      ctx.fillRect(x, y, width, height);
+      ctx.globalAlpha = variable.arrayLength !== null && index % 2 === 1 ? 0.6 : 1;
+      ctx.fillStyle = selected ? variable.selectedFill : variable.fill;
+      ctx.fillRect(x, y, width, height);
+      ctx.lineWidth = selected || hovered ? 1.5 : 1;
+      ctx.strokeStyle = variable.stroke;
+      ctx.strokeRect(x + 0.5, y + 0.5, Math.max(0, width - 1), Math.max(0, height - 1));
+      ctx.globalAlpha = 1;
+
+      if (layout.cellHeight >= 16) {
+        ctx.font = `600 ${fontSize}px ${state.fontFamily}`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillStyle = selected ? "#ffffff" : variable.stroke;
+        const text = fitText(ctx, elementValue(variable, index) ?? "?", width - 8);
+        if (text) ctx.fillText(text, x + width / 2, y + height / 2);
+      }
+
+      const showName = from === elementStart && (selected || hovered || layout.cellHeight >= 20) && layout.cellHeight >= 12;
+      if (showName) {
+        chips.push({ label: elementLabel(variable, index), x, y, width, stroke: variable.stroke });
+      }
+    }
+  }
+}
+
+function fitText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
+  if (maxWidth <= 0) return "";
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  for (let length = text.length - 1; length > 0; length -= 1) {
+    const candidate = `${text.slice(0, length)}…`;
+    if (ctx.measureText(candidate).width <= maxWidth) return candidate;
+  }
+  return "";
 }
 
 function drawSelectedValueBits(
@@ -142,8 +240,11 @@ function drawSelectedValueBits(
   if (layout.bitSize < 14 || !state.selectedVariableId) return;
   const variable = state.variables.find((item) => item.id === state.selectedVariableId);
   if (!variable) return;
-  const bits = variableBitString(variable.type, variable.value, variable.sizeInBytes);
-  if (!bits) return;
+  const elementBits = new Map<number, string | null>();
+  const bitsOf = (index: number) => {
+    if (!elementBits.has(index)) elementBits.set(index, elementBitString(variable, index));
+    return elementBits.get(index) ?? null;
+  };
 
   const gap = bitGap(layout.bitSize);
   const cell = Math.max(0.5, layout.bitSize - gap);
@@ -162,12 +263,15 @@ function drawSelectedValueBits(
     const from = Math.max(variable.startAddress, rowByte + range.startCol);
     const to = Math.min(variable.endAddress, rowByte + range.endCol, rowByte + layout.bytesPerRow - 1);
     for (let address = from; address <= to; address += 1) {
-      const byteOffset = address - variable.startAddress;
+      const offset = address - variable.startAddress;
+      const bits = bitsOf(Math.floor(offset / variable.elementSize));
+      if (!bits) continue;
+      const byteInElement = offset % variable.elementSize;
       const col = address - rowByte;
       const x = state.pan.x + col * layout.byteStride;
       const y = state.pan.y + row * layout.rowStride + layout.labelBlock + cell / 2;
       for (let slot = 0; slot < BITS_PER_BYTE; slot += 1) {
-        const bit = bits[byteOffset * BITS_PER_BYTE + slot];
+        const bit = bits[byteInElement * BITS_PER_BYTE + slot];
         if (bit !== "0" && bit !== "1") continue;
         ctx.fillText(bit, x + slot * layout.bitSize + cell / 2, y);
       }
@@ -200,7 +304,7 @@ function drawVariableName(
   name: string,
   x: number,
   y: number,
-  byteWidth: number,
+  width: number,
   stroke: string,
   background: string,
   fontFamily: string,
@@ -208,14 +312,14 @@ function drawVariableName(
   ctx.font = `600 11px ${fontFamily}`;
   ctx.textAlign = "center";
   ctx.textBaseline = "bottom";
-  const boxWidth = ctx.measureText(name).width + 10;
+  const boxWidth = Math.min(width, Math.max(ctx.measureText(name).width + 10, 52));
   const boxHeight = 15;
-  const left = x + byteWidth / 2 - boxWidth / 2;
+  const left = x + width / 2 - boxWidth / 2;
   const top = y - boxHeight - 1;
   ctx.fillStyle = background;
   ctx.fillRect(left, top, boxWidth, boxHeight);
   ctx.fillStyle = stroke;
-  ctx.fillText(name, x + byteWidth / 2, y - 2);
+  ctx.fillText(name, x + width / 2, y - 2);
 }
 
 function drawBitGrid(
@@ -286,7 +390,7 @@ function drawByteBlocks(
       if (byteIndex === hoveredByte || byteIndex === selectedByte) continue;
       const x = pan.x + col * layout.byteStride;
       const y = pan.y + row * layout.rowStride + layout.labelBlock;
-      ctx.rect(x, y, layout.byteWidth, Math.max(layout.bitSize, 1));
+      ctx.rect(x + 0.5, y + 0.5, Math.max(0, layout.byteWidth - 1), Math.max(0, layout.cellHeight - 1));
     }
   }
   ctx.fillStyle = colors.cell;
@@ -317,7 +421,7 @@ function drawRowBands(
     const x = pan.x + firstCol * layout.byteStride;
     const y = pan.y + row * layout.rowStride + layout.labelBlock;
     const width = count * layout.byteWidth + Math.max(0, count - 1) * layout.byteGap;
-    const bandHeight = Math.max(layout.bitSize, 1);
+    const bandHeight = Math.max(layout.cellHeight, 1);
     ctx.fillRect(x, y, width, bandHeight);
     ctx.strokeRect(x + 0.5, y + 0.5, Math.max(0, width - 1), Math.max(0, bandHeight - 1));
   }
@@ -359,6 +463,13 @@ function drawByteHighlight(
   const inset = Math.min(1.5, Math.max(0.4, bit * 0.07));
 
   ctx.fillStyle = kind === "selected" ? colors.selected : colors.hoverByte;
+  if (layout.unit === "bytes") {
+    ctx.fillRect(x, y, layout.byteWidth, layout.cellHeight);
+    ctx.lineWidth = kind === "selected" ? 1.5 : 1;
+    ctx.strokeStyle = colors.hover;
+    ctx.strokeRect(x + 0.5, y + 0.5, layout.byteWidth - 1, layout.cellHeight - 1);
+    return;
+  }
   for (let slot = 0; slot < BITS_PER_BYTE; slot += 1) {
     ctx.fillRect(x + slot * bit + inset, y + inset, Math.max(0.5, bit - inset * 2), Math.max(0.5, bit - inset * 2));
   }
@@ -402,6 +513,10 @@ function drawLabels(
 ): void {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
+  const addressOffset =
+    layout.footerHeight > 0
+      ? layout.labelBlock + layout.cellHeight + layout.footerHeight / 2
+      : layout.addressHeight / 2;
 
   for (let row = range.startRow; row <= range.endRow; row += 1) {
     const rowTop = state.pan.y + row * layout.rowStride;
@@ -415,9 +530,9 @@ function drawLabels(
         ctx.font = `500 11px ${state.fontFamily}`;
         ctx.fillStyle = emphasized ? state.colors.text : state.colors.muted;
         ctx.fillText(
-          formatHexAddress(byteIndex, state.hexDigits),
+          formatAddress(byteIndex, state.addressFormat),
           x + layout.byteWidth / 2,
-          rowTop + layout.addressHeight / 2,
+          rowTop + addressOffset,
         );
       }
 

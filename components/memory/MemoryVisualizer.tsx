@@ -23,13 +23,24 @@ import {
 import { allocateVariables } from "@/lib/memory/memory-allocator";
 import { DEFAULT_ZOOM } from "@/lib/memory/memory-constants";
 import { createMemoryModel, memorySizeToBytes, variableAtAddress, variableToAllocation } from "@/lib/memory/memory-utils";
-import type { CVariable, HoveredBit, MemorySize, PanPosition, ViewportSize, WorkspaceTool } from "@/lib/memory/memory-types";
+import type {
+  AddressBase,
+  CVariable,
+  HoveredBit,
+  MemorySize,
+  MemoryUnit,
+  PanPosition,
+  ViewportSize,
+  WorkspaceTool,
+} from "@/lib/memory/memory-types";
 
 const EMPTY_VIEWPORT: ViewportSize = { width: 0, height: 0 };
 type CompactTab = "memory" | "code" | "variables";
 
 export function MemoryVisualizer() {
   const [memorySize, setMemorySize] = useState<MemorySize>("1KB");
+  const [unit, setUnit] = useState<MemoryUnit>("bits");
+  const [addressBase, setAddressBase] = useState<AddressBase>("hex");
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const [pan, setPan] = useState<PanPosition>({ x: 0, y: 0 });
   const [viewport, setViewport] = useState<ViewportSize>(EMPTY_VIEWPORT);
@@ -39,6 +50,7 @@ export function MemoryVisualizer() {
   const [visualizerVariableId, setVisualizerVariableId] = useState<string | null>(null);
   const [focusToken, setFocusToken] = useState(0);
   const [tool, setTool] = useState<WorkspaceTool>("pointer");
+  const [mergeBytes, setMergeBytes] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [compactTab, setCompactTab] = useState<CompactTab>("memory");
   const [code, setCode] = useState(DEFAULT_C_PROGRAM);
@@ -51,22 +63,26 @@ export function MemoryVisualizer() {
     [memorySize, variables],
   );
   const layout = useMemo(
-    () => computeLayout(Math.max(viewport.width, 1), zoom, model.sizeInBytes),
-    [viewport.width, zoom, model.sizeInBytes],
+    () => computeLayout(Math.max(viewport.width, 1), zoom, model.sizeInBytes, unit),
+    [viewport.width, zoom, model.sizeInBytes, unit],
   );
-  const addressRange = useMemo(() => getAddressRange(model.sizeInBytes), [model.sizeInBytes]);
+  const addressFormat = useMemo(
+    () => getAddressRange(model.sizeInBytes, addressBase).format,
+    [model.sizeInBytes, addressBase],
+  );
 
   const viewRef = useRef({
     zoom,
     pan,
     viewport,
     layout,
+    unit,
     totalBytes: model.sizeInBytes,
   });
 
   useLayoutEffect(() => {
-    viewRef.current = { zoom, pan, viewport, layout, totalBytes: model.sizeInBytes };
-  }, [zoom, pan, viewport, layout, model.sizeInBytes]);
+    viewRef.current = { zoom, pan, viewport, layout, unit, totalBytes: model.sizeInBytes };
+  }, [zoom, pan, viewport, layout, unit, model.sizeInBytes]);
 
   const needsInitialPan = useRef(true);
   const previousViewport = useRef(viewport);
@@ -114,7 +130,7 @@ export function MemoryVisualizer() {
     const nextZoom = Math.max(current.zoom, 1);
     const zoomChanged = nextZoom !== current.zoom;
     const nextLayout = zoomChanged
-      ? computeLayout(current.viewport.width, nextZoom, current.totalBytes)
+      ? computeLayout(current.viewport.width, nextZoom, current.totalBytes, current.unit)
       : current.layout;
     const next = panToAddressRange(variable.startAddress, variable.endAddress, nextLayout, current.viewport);
     current.zoom = nextZoom;
@@ -202,7 +218,7 @@ export function MemoryVisualizer() {
     if (Math.abs(nextZoom - current.zoom) < 0.0005) return;
 
     const focus = describeFocus(screenX, screenY, current.pan, current.layout);
-    const nextLayout = computeLayout(current.viewport.width, nextZoom, current.totalBytes);
+    const nextLayout = computeLayout(current.viewport.width, nextZoom, current.totalBytes, current.unit);
     const nextPan = clampPan(
       panForFocus(focus, screenX, screenY, nextLayout),
       nextLayout,
@@ -229,14 +245,32 @@ export function MemoryVisualizer() {
   const onFit = useCallback(() => {
     const current = viewRef.current;
     if (current.viewport.width === 0 || current.viewport.height === 0) return;
-    const nextZoom = computeFitZoom(current.viewport, current.totalBytes);
-    const nextLayout = computeLayout(current.viewport.width, nextZoom, current.totalBytes);
+    const nextZoom = computeFitZoom(current.viewport, current.totalBytes, current.unit);
+    const nextLayout = computeLayout(current.viewport.width, nextZoom, current.totalBytes, current.unit);
     const nextPan = initialPan(nextLayout, current.viewport);
     current.zoom = nextZoom;
     current.pan = nextPan;
     current.layout = nextLayout;
     setZoom(nextZoom);
     setPan(nextPan);
+  }, []);
+
+  const onUnitChange = useCallback((next: MemoryUnit) => {
+    const current = viewRef.current;
+    if (next === current.unit) return;
+    if (current.viewport.width > 0 && current.viewport.height > 0) {
+      const centerX = current.viewport.width / 2;
+      const centerY = current.viewport.height / 2;
+      const focus = describeFocus(centerX, centerY, current.pan, current.layout);
+      const nextLayout = computeLayout(current.viewport.width, current.zoom, current.totalBytes, next);
+      const nextPan = clampPan(panForFocus(focus, centerX, centerY, nextLayout), nextLayout, current.viewport);
+      current.layout = nextLayout;
+      current.pan = nextPan;
+      setPan(nextPan);
+    }
+    current.unit = next;
+    setUnit(next);
+    setHoveredBit(null);
   }, []);
 
   const onMemorySizeChange = useCallback((size: MemorySize) => {
@@ -265,9 +299,9 @@ export function MemoryVisualizer() {
     if (previous.width === viewport.width && previous.height === viewport.height) return;
 
     const current = viewRef.current;
-    const oldLayout = computeLayout(previous.width, current.zoom, current.totalBytes);
+    const oldLayout = computeLayout(previous.width, current.zoom, current.totalBytes, current.unit);
     const focus = describeFocus(previous.width / 2, previous.height / 2, current.pan, oldLayout);
-    const nextLayout = computeLayout(viewport.width, current.zoom, current.totalBytes);
+    const nextLayout = computeLayout(viewport.width, current.zoom, current.totalBytes, current.unit);
     const next = clampPan(
       panForFocus(focus, viewport.width / 2, viewport.height / 2, nextLayout),
       nextLayout,
@@ -284,9 +318,13 @@ export function MemoryVisualizer() {
     <div className="flex h-dvh flex-col overflow-hidden bg-background text-foreground">
       <MemoryToolbar
         memorySize={memorySize}
+        unit={unit}
+        addressBase={addressBase}
         zoom={zoom}
         editorOpen={editorOpen}
         onMemorySizeChange={onMemorySizeChange}
+        onUnitChange={onUnitChange}
+        onAddressBaseChange={setAddressBase}
         onZoomIn={onZoomIn}
         onZoomOut={onZoomOut}
         onFit={onFit}
@@ -315,7 +353,7 @@ export function MemoryVisualizer() {
           } ${editorOpen && compactTab !== "memory" ? "max-lg:hidden" : ""}`}
         >
             {visualizedVariable ? (
-              <VariableVisualizer variable={visualizedVariable} digits={addressRange.digits} />
+              <VariableVisualizer key={visualizedVariable.id} variable={visualizedVariable} addressFormat={addressFormat} />
             ) : (
               <MemoryGrid
                 model={model}
@@ -326,7 +364,7 @@ export function MemoryVisualizer() {
                 selectedByte={selectedByte}
                 selectedVariableId={selectedVariableId}
                 variables={variables}
-                hexDigits={addressRange.digits}
+                addressFormat={addressFormat}
                 viewport={viewport}
                 onViewportChange={onViewportChange}
                 onPanChange={applyPan}
@@ -337,6 +375,8 @@ export function MemoryVisualizer() {
                 onClearSelection={onClearSelection}
                 tool={tool}
                 onToolChange={setTool}
+                mergeBytes={mergeBytes}
+                onMergeBytesChange={setMergeBytes}
                 editorOpen={editorOpen}
               />
             )}
@@ -353,7 +393,7 @@ export function MemoryVisualizer() {
               variables={variables}
               issues={issues}
               allocationError={allocationError}
-              digits={addressRange.digits}
+              addressFormat={addressFormat}
               selectedVariableId={selectedVariableId}
               focusToken={focusToken}
               onCodeChange={setCode}

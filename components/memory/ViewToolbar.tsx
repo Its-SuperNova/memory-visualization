@@ -1,18 +1,22 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Hand, MousePointer2 } from "lucide-react";
+import { Combine, Hand, MousePointer2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import type { WorkspaceTool } from "@/lib/memory/memory-types";
+import type { MemoryUnit, WorkspaceTool } from "@/lib/memory/memory-types";
 
 type ViewToolbarProps = {
   tool: WorkspaceTool;
+  unit: MemoryUnit;
+  mergeBytes: boolean;
   onToolChange: (tool: WorkspaceTool) => void;
+  onMergeBytesChange: (merge: boolean) => void;
 };
 
-export function ViewToolbar({ tool, onToolChange }: ViewToolbarProps) {
+export function ViewToolbar({ tool, unit, mergeBytes, onToolChange, onMergeBytesChange }: ViewToolbarProps) {
   return (
     <div
       data-overlay
@@ -22,7 +26,7 @@ export function ViewToolbar({ tool, onToolChange }: ViewToolbarProps) {
     >
       <ToolButton
         label="Pointer"
-        description="Select a bit"
+        description={unit === "bits" ? "Select a bit" : "Select a byte"}
         active={tool === "pointer"}
         onClick={() => onToolChange("pointer")}
       >
@@ -36,6 +40,23 @@ export function ViewToolbar({ tool, onToolChange }: ViewToolbarProps) {
       >
         <Hand />
       </ToolButton>
+      {unit === "bytes" ? (
+        <>
+          <Separator orientation="vertical" className="mx-0.5 h-5" />
+          <ToolButton
+            label="Merge bytes"
+            description={
+              mergeBytes
+                ? "Show every byte as its own box"
+                : "Join the bytes of each variable or array element into one box with its value"
+            }
+            active={mergeBytes}
+            onClick={() => onMergeBytesChange(!mergeBytes)}
+          >
+            <Combine />
+          </ToolButton>
+        </>
+      ) : null}
     </div>
   );
 }

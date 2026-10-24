@@ -38,6 +38,36 @@ export function variableBitString(type: CDataType, value: string | null, sizeInB
 export function formatVariableBinary(type: CDataType, value: string | null, sizeInBytes: number): string | null {
   const bits = variableBitString(type, value, sizeInBytes);
   if (!bits) return null;
+  return groupBits(bits);
+}
+
+type ElementSource = {
+  type: CDataType;
+  value: string | null;
+  elementSize: number;
+  arrayLength: number | null;
+  elements: readonly string[] | null;
+};
+
+/** Value of one array element. A scalar has a single element at index 0. */
+export function elementValue(variable: ElementSource, index: number): string | null {
+  if (variable.arrayLength === null) return variable.value;
+  if (!variable.elements) return null;
+  return variable.elements[index] ?? (variable.type === "char" ? "'\\0'" : "0");
+}
+
+/** Bits of one array element, most significant bit first, with no separators. */
+export function elementBitString(variable: ElementSource, index: number): string | null {
+  return variableBitString(variable.type, elementValue(variable, index), variable.elementSize);
+}
+
+/** Bits of one array element grouped by byte. */
+export function formatElementBinary(variable: ElementSource, index: number): string | null {
+  const bits = elementBitString(variable, index);
+  return bits ? groupBits(bits) : null;
+}
+
+function groupBits(bits: string): string {
   return bits.match(/.{8}/g)?.join(" ") ?? bits;
 }
 

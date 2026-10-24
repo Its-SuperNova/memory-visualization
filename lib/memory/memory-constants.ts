@@ -3,6 +3,10 @@ export const BITS_PER_BYTE = 8;
 /** Bit cell edge length at 100% zoom, in CSS pixels. */
 export const BASE_BIT_SIZE = 22;
 
+/** Byte cell size at 100% zoom in the bytes view, in CSS pixels. */
+export const BASE_BYTE_WIDTH = 64;
+export const BASE_BYTE_HEIGHT = 40;
+
 export const MIN_ZOOM = 0.25;
 export const MAX_ZOOM = 4;
 export const DEFAULT_ZOOM = 1;
@@ -11,7 +15,7 @@ export const ZOOM_STEP = 0.25;
 export const WORKSPACE_PADDING = 40;
 
 /** Bytes across each row. Zoom scales the cells; it does not change this count. */
-export const BYTES_PER_ROW = 10;
+export const BYTES_PER_ROW = 16;
 
 export type MemoryPalette = {
   background: string;

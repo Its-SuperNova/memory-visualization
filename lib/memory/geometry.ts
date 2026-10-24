@@ -1,5 +1,7 @@
 import {
   BASE_BIT_SIZE,
+  BASE_BYTE_HEIGHT,
+  BASE_BYTE_WIDTH,
   BITS_PER_BYTE,
   BYTES_PER_ROW,
   MAX_ZOOM,
@@ -8,10 +10,14 @@ import {
   ZOOM_STEP,
 } from "@/lib/memory/memory-constants";
 import { bitIndexToByteAddress, bitIndexToPosition } from "@/lib/memory/memory-utils";
-import type { HoveredBit, PanPosition, ViewportSize } from "@/lib/memory/memory-types";
+import type { HoveredBit, MemoryUnit, PanPosition, ViewportSize } from "@/lib/memory/memory-types";
 
 export type MemoryLayout = {
+  unit: MemoryUnit;
+  /** Width of one bit slot. In the bytes view this is byteWidth / 8 and no bit cells are drawn. */
   bitSize: number;
+  /** Height of a byte cell. */
+  cellHeight: number;
   byteWidth: number;
   byteGap: number;
   rowGap: number;
@@ -20,6 +26,8 @@ export type MemoryLayout = {
   addressHeight: number;
   bitLabelHeight: number;
   labelBlock: number;
+  /** Space below the cells. The bytes view draws addresses here. */
+  footerHeight: number;
   bytesPerRow: number;
   rows: number;
   contentWidth: number;
@@ -59,19 +67,24 @@ export function computeLayout(
   _viewportWidth: number,
   zoom: number,
   totalBytes: number,
+  unit: MemoryUnit = "bits",
 ): MemoryLayout {
   const safeBytes = Math.max(0, Math.floor(totalBytes));
-  const bitSize = BASE_BIT_SIZE * clampZoom(zoom);
-  const byteWidth = bitSize * BITS_PER_BYTE;
-  const byteGap = Math.max(4, bitSize * 0.42);
-  const rowGap = Math.max(4, bitSize * 0.36);
-  const showBitPositions = bitSize >= 32;
-  const showAddress = bitSize >= 24;
+  const scale = clampZoom(zoom);
+  const bytesView = unit === "bytes";
+  const cellHeight = bytesView ? BASE_BYTE_HEIGHT * scale : BASE_BIT_SIZE * scale;
+  const byteWidth = bytesView ? BASE_BYTE_WIDTH * scale : cellHeight * BITS_PER_BYTE;
+  const bitSize = byteWidth / BITS_PER_BYTE;
+  const byteGap = bytesView ? Math.max(4, cellHeight * 0.2) : Math.max(4, bitSize * 0.42);
+  const rowGap = Math.max(4, cellHeight * 0.36);
+  const showBitPositions = !bytesView && bitSize >= 32;
+  const showAddress = bytesView ? byteWidth >= 44 : bitSize >= 24;
   const addressHeight = showAddress ? 16 : 0;
   const bitLabelHeight = showBitPositions ? 14 : 0;
   const labelBlock = addressHeight + bitLabelHeight;
+  const footerHeight = bytesView && showAddress ? 16 : 0;
   const byteStride = byteWidth + byteGap;
-  const rowStride = labelBlock + bitSize + rowGap;
+  const rowStride = labelBlock + cellHeight + footerHeight + rowGap;
   const bytesPerRow = safeBytes === 0 ? 1 : Math.min(BYTES_PER_ROW, safeBytes);
   const rows = safeBytes === 0 ? 0 : Math.ceil(safeBytes / bytesPerRow);
   const contentWidth =
@@ -79,7 +92,9 @@ export function computeLayout(
   const contentHeight = rows === 0 ? 0 : rows * rowStride - rowGap;
 
   return {
+    unit,
     bitSize,
+    cellHeight,
     byteWidth,
     byteGap,
     rowGap,
@@ -88,6 +103,7 @@ export function computeLayout(
     addressHeight,
     bitLabelHeight,
     labelBlock,
+    footerHeight,
     bytesPerRow,
     rows,
     contentWidth,
@@ -114,7 +130,7 @@ export function panToAddressRange(
   const minX = Math.min(origin.x, finish.x);
   const maxX = Math.max(origin.x, finish.x) + layout.byteWidth;
   const minY = Math.min(origin.y, finish.y);
-  const maxY = Math.max(origin.y, finish.y) + layout.bitSize;
+  const maxY = Math.max(origin.y, finish.y) + layout.cellHeight;
   return clampPan(
     {
       x: viewport.width / 2 - (minX + maxX) / 2,
@@ -170,22 +186,23 @@ export function layoutFits(
   viewport: ViewportSize,
   zoom: number,
   totalBytes: number,
+  unit: MemoryUnit = "bits",
 ): boolean {
-  const layout = computeLayout(viewport.width, zoom, totalBytes);
+  const layout = computeLayout(viewport.width, zoom, totalBytes, unit);
   return (
     layout.contentWidth <= viewport.width - WORKSPACE_PADDING * 2 + 1 &&
     layout.contentHeight <= viewport.height - WORKSPACE_PADDING * 2 + 1
   );
 }
 
-export function computeFitZoom(viewport: ViewportSize, totalBytes: number): number {
+export function computeFitZoom(viewport: ViewportSize, totalBytes: number, unit: MemoryUnit = "bits"): number {
   let low = MIN_ZOOM;
   let high = MAX_ZOOM;
   let best = MIN_ZOOM;
 
   for (let attempt = 0; attempt < 22; attempt += 1) {
     const mid = (low + high) / 2;
-    if (layoutFits(viewport, mid, totalBytes)) {
+    if (layoutFits(viewport, mid, totalBytes, unit)) {
       best = mid;
       low = mid;
     } else {
@@ -217,12 +234,13 @@ export function hitTest(
   const localX = worldX - col * layout.byteStride;
   const localY = worldY - row * layout.rowStride;
   if (localX < 0 || localX >= layout.byteWidth) return null;
-  if (localY < layout.labelBlock || localY >= layout.labelBlock + layout.bitSize) return null;
+  if (localY < layout.labelBlock || localY >= layout.labelBlock + layout.cellHeight) return null;
 
   const byteAddress = row * layout.bytesPerRow + col;
   if (byteAddress < 0 || byteAddress >= layout.totalBytes) return null;
 
-  const slot = Math.min(BITS_PER_BYTE - 1, Math.max(0, Math.floor(localX / layout.bitSize)));
+  const slot =
+    layout.unit === "bytes" ? 0 : Math.min(BITS_PER_BYTE - 1, Math.max(0, Math.floor(localX / layout.bitSize)));
   const bitIndex = byteAddress * BITS_PER_BYTE + slot;
   return {
     bitIndex,
@@ -254,7 +272,7 @@ export function describeFocus(
         kind: "byte",
         byteIndex,
         fracX: (worldX - origin.x) / layout.byteWidth,
-        fracY: (worldY - origin.y) / layout.bitSize,
+        fracY: (worldY - origin.y) / layout.cellHeight,
       };
     }
   }
@@ -277,7 +295,7 @@ export function panForFocus(
     const origin = byteOrigin(layout, byteIndex);
     return {
       x: screenX - (origin.x + focus.fracX * layout.byteWidth),
-      y: screenY - (origin.y + focus.fracY * layout.bitSize),
+      y: screenY - (origin.y + focus.fracY * layout.cellHeight),
     };
   }
 
@@ -317,8 +335,8 @@ export type DrawLod = "bits" | "bytes" | "rows";
 const MAX_BIT_CELLS = 12000;
 const MAX_BYTE_CELLS = 8000;
 
-export function chooseLod(bitSize: number, visibleBytes: number): DrawLod {
-  if (bitSize >= 8 && visibleBytes * BITS_PER_BYTE <= MAX_BIT_CELLS) return "bits";
+export function chooseLod(layout: MemoryLayout, visibleBytes: number): DrawLod {
+  if (layout.unit === "bits" && layout.bitSize >= 8 && visibleBytes * BITS_PER_BYTE <= MAX_BIT_CELLS) return "bits";
   if (visibleBytes <= MAX_BYTE_CELLS) return "bytes";
   return "rows";
 }
@@ -333,5 +351,5 @@ export function estimateLod(layout: MemoryLayout, viewport: ViewportSize): DrawL
     layout.rows,
     Math.ceil(viewport.height / Math.max(layout.rowStride, 1)) + 2,
   );
-  return chooseLod(layout.bitSize, Math.max(0, cols) * Math.max(0, rows));
+  return chooseLod(layout, Math.max(0, cols) * Math.max(0, rows));
 }

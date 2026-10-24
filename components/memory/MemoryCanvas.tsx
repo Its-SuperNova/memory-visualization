@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef } from "react";
 
 import { MemoryTooltip, placeTooltip } from "@/components/memory/MemoryTooltip";
 import { useTheme } from "@/components/theme/ThemeProvider";
+import type { AddressFormat } from "@/lib/memory/address-utils";
 import { drawMemory } from "@/lib/memory/draw-memory";
 import { clampPan, hitTest, wheelZoom, type MemoryLayout } from "@/lib/memory/geometry";
 import type { CVariable, HoveredBit, PanPosition, ViewportSize, WorkspaceTool } from "@/lib/memory/memory-types";
@@ -16,13 +17,14 @@ type MemoryCanvasProps = {
   selectedByte: number | null;
   selectedVariableId: string | null;
   variables: readonly CVariable[];
-  hexDigits: number;
+  addressFormat: AddressFormat;
   onViewportChange: (viewport: ViewportSize) => void;
   onPanChange: (pan: PanPosition) => void;
   onHover: (bit: HoveredBit | null) => void;
   onSelectByte: (byteAddress: number) => void;
   onZoomAt: (screenX: number, screenY: number, nextZoom: number) => void;
   tool: WorkspaceTool;
+  mergeBytes: boolean;
 };
 
 const DRAG_THRESHOLD = 4;
@@ -35,13 +37,14 @@ export function MemoryCanvas({
   selectedByte,
   selectedVariableId,
   variables,
-  hexDigits,
+  addressFormat,
   onViewportChange,
   onPanChange,
   onHover,
   onSelectByte,
   onZoomAt,
   tool,
+  mergeBytes,
 }: MemoryCanvasProps) {
   const { palette } = useTheme();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -70,7 +73,8 @@ export function MemoryCanvas({
     selectedByte,
     selectedVariableId,
     variables,
-    hexDigits,
+    addressFormat,
+    mergeBytes,
     colors: palette,
   });
   const callbacksRef = useRef({ onPanChange, onHover, onSelectByte, onZoomAt });
@@ -107,7 +111,8 @@ export function MemoryCanvas({
       selectedByte: view.selectedByte,
       selectedVariableId: view.selectedVariableId,
       variables: view.variables,
-      hexDigits: view.hexDigits,
+      addressFormat: view.addressFormat,
+      mergeBytes: view.mergeBytes,
       fontFamily: fontRef.current,
       colors: view.colors,
     });
@@ -142,18 +147,19 @@ export function MemoryCanvas({
       selectedByte,
       selectedVariableId,
       variables,
-      hexDigits,
+      addressFormat,
+      mergeBytes,
       colors: palette,
       pan: dragging ? viewRef.current.pan : pan,
     };
     paint();
-  }, [layout, pan, zoom, hoveredBit, selectedByte, selectedVariableId, variables, hexDigits, palette]);
+  }, [layout, pan, zoom, hoveredBit, selectedByte, selectedVariableId, variables, addressFormat, mergeBytes, palette]);
 
   useLayoutEffect(() => {
     const element = tooltipRef.current;
     if (!element || !hoveredBit) return;
     placeTooltip(element, pointerRef.current.x, pointerRef.current.y);
-  }, [hoveredBit, hexDigits]);
+  }, [hoveredBit, addressFormat]);
 
   useLayoutEffect(() => {
     const container = containerRef.current;
@@ -303,8 +309,9 @@ export function MemoryCanvas({
     >
       <canvas ref={canvasRef} className="absolute inset-0 font-mono" />
       <MemoryTooltip
+        unit={layout.unit}
         bit={hoveredBit}
-        digits={hexDigits}
+        addressFormat={addressFormat}
         variables={variables}
         tooltipRef={tooltipRef}
       />

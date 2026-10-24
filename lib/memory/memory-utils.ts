@@ -1,3 +1,4 @@
+import { formatCType, type CDataType } from "@/lib/c-parser/c-types";
 import { BITS_PER_BYTE } from "@/lib/memory/memory-constants";
 import {
   MEMORY_SIZE_OPTIONS,
@@ -80,14 +81,15 @@ export function variableAtAddress<T extends { startAddress: number; endAddress: 
 export function variableToAllocation(variable: {
   id: string;
   name: string;
-  type: string;
+  type: CDataType;
+  arrayLength: number | null;
   startAddress: number;
   sizeInBytes: number;
 }): MemoryAllocation {
   return {
     id: variable.id,
     name: variable.name,
-    cType: variable.type,
+    cType: formatCType(variable.type, variable.arrayLength),
     address: variable.startAddress,
     sizeInBytes: variable.sizeInBytes,
   };

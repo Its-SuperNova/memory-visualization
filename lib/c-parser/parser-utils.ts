@@ -1,4 +1,8 @@
-export function stripComments(source: string): string {
+/**
+ * Replaces comments with spaces so every character keeps its line and column.
+ * String literal contents are blanked too unless keepStrings is set.
+ */
+export function stripComments(source: string, keepStrings = false): string {
   let out = "";
   let index = 0;
 
@@ -12,12 +16,50 @@ export function stripComments(source: string): string {
     }
 
     if (current === "/" && next === "*") {
+      out += "  ";
       index += 2;
       while (index < source.length && !(source[index] === "*" && source[index + 1] === "/")) {
         out += source[index] === "\n" ? "\n" : " ";
         index += 1;
       }
+      if (index < source.length) out += "  ";
       index += 2;
+      continue;
+    }
+
+    if (current === "'") {
+      out += current;
+      index += 1;
+      while (index < source.length && source[index] !== "'" && source[index] !== "\n") {
+        if (source[index] === "\\" && index + 1 < source.length) {
+          out += source[index];
+          index += 1;
+        }
+        out += source[index];
+        index += 1;
+      }
+      if (source[index] === "'") {
+        out += "'";
+        index += 1;
+      }
+      continue;
+    }
+
+    if (current === '"' && keepStrings) {
+      out += current;
+      index += 1;
+      while (index < source.length && source[index] !== '"' && source[index] !== "\n") {
+        if (source[index] === "\\" && index + 1 < source.length) {
+          out += source[index];
+          index += 1;
+        }
+        out += source[index];
+        index += 1;
+      }
+      if (source[index] === '"') {
+        out += '"';
+        index += 1;
+      }
       continue;
     }
 

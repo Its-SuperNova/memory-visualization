@@ -2,20 +2,23 @@
 
 import type { RefObject } from "react";
 
-import { formatHexAddress } from "@/lib/memory/address-utils";
+import { formatCType } from "@/lib/c-parser/c-types";
+import { formatAddress, type AddressFormat } from "@/lib/memory/address-utils";
 import { variableAtAddress } from "@/lib/memory/memory-utils";
-import type { CVariable, HoveredBit } from "@/lib/memory/memory-types";
+import type { CVariable, HoveredBit, MemoryUnit } from "@/lib/memory/memory-types";
 
 type MemoryTooltipProps = {
+  unit: MemoryUnit;
   bit: HoveredBit | null;
-  digits: number;
+  addressFormat: AddressFormat;
   variables: readonly CVariable[];
   tooltipRef: RefObject<HTMLDivElement | null>;
 };
 
-export function MemoryTooltip({ bit, digits, variables, tooltipRef }: MemoryTooltipProps) {
+export function MemoryTooltip({ unit, bit, addressFormat, variables, tooltipRef }: MemoryTooltipProps) {
   if (!bit) return null;
   const variable = variableAtAddress(variables, bit.byteAddress);
+  const showBit = unit === "bits";
 
   return (
     <div
@@ -31,9 +34,15 @@ export function MemoryTooltip({ bit, digits, variables, tooltipRef }: MemoryTool
           </p>
           <dl className="mt-2 space-y-1.5">
             <Field label="Variable" value={variable.name} />
-            <Field label="Type" value={variable.type} />
-            <Field label="Memory Address" value={formatHexAddress(bit.byteAddress, digits)} />
-            <Field label="Bit Position" value={String(bit.bitPosition)} />
+            <Field label="Type" value={formatCType(variable.type, variable.arrayLength)} />
+            {variable.arrayLength !== null ? (
+              <Field
+                label="Element"
+                value={`${variable.name}[${Math.floor((bit.byteAddress - variable.startAddress) / variable.elementSize)}]`}
+              />
+            ) : null}
+            <Field label="Memory Address" value={formatAddress(bit.byteAddress, addressFormat)} />
+            {showBit ? <Field label="Bit Position" value={String(bit.bitPosition)} /> : null}
             <Field
               label="Byte"
               value={`${bit.byteAddress - variable.startAddress + 1} of ${variable.sizeInBytes}`}
@@ -43,10 +52,10 @@ export function MemoryTooltip({ bit, digits, variables, tooltipRef }: MemoryTool
         </>
       ) : (
         <>
-          <p className="text-[10px] font-medium tracking-[0.14em] text-muted-foreground">BIT</p>
+          <p className="text-[10px] font-medium tracking-[0.14em] text-muted-foreground">{showBit ? "BIT" : "BYTE"}</p>
           <dl className="mt-2 space-y-1.5">
-            <Field label="Memory Address" value={formatHexAddress(bit.byteAddress, digits)} />
-            <Field label="Bit Position" value={String(bit.bitPosition)} />
+            <Field label="Memory Address" value={formatAddress(bit.byteAddress, addressFormat)} />
+            {showBit ? <Field label="Bit Position" value={String(bit.bitPosition)} /> : null}
             <Field label="Status" value="Available" />
             <Field label="Size" value="1 Byte" />
           </dl>

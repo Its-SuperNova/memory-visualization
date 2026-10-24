@@ -1,15 +1,18 @@
 "use client";
 
 import { Separator } from "@/components/ui/separator";
-import { formatHexAddress } from "@/lib/memory/address-utils";
+import { formatAddress, type AddressFormat } from "@/lib/memory/address-utils";
 import { BITS_PER_BYTE } from "@/lib/memory/memory-constants";
+import type { MemoryUnit } from "@/lib/memory/memory-types";
 
 type SelectedByteInfoProps = {
   byteAddress: number | null;
-  digits: number;
+  addressFormat: AddressFormat;
+  unit: MemoryUnit;
 };
 
-export function SelectedByteInfo({ byteAddress, digits }: SelectedByteInfoProps) {
+export function SelectedByteInfo({ byteAddress, addressFormat, unit }: SelectedByteInfoProps) {
+  const hex = addressFormat.base === "hex";
   return (
     <section
       data-overlay
@@ -18,15 +21,25 @@ export function SelectedByteInfo({ byteAddress, digits }: SelectedByteInfoProps)
     >
       <h2 className="text-[10px] font-medium tracking-[0.14em] text-muted-foreground">SELECTED BYTE</h2>
       {byteAddress === null ? (
-        <p className="mt-2 text-xs leading-5 text-muted-foreground">Click a bit to select its byte.</p>
+        <p className="mt-2 text-xs leading-5 text-muted-foreground">
+          {unit === "bits" ? "Click a bit to select its byte." : "Click a byte to select it."}
+        </p>
       ) : (
         <div className="mt-2 space-y-1.5">
-          <InfoRow label="Address" value={formatHexAddress(byteAddress, digits)} mono />
-          <InfoRow label="Decimal Address" value={String(byteAddress)} mono />
+          <InfoRow label="Address" value={formatAddress(byteAddress, addressFormat)} mono />
+          <InfoRow
+            label={hex ? "Decimal Address" : "Hex Address"}
+            value={formatAddress(byteAddress, { ...addressFormat, base: hex ? "decimal" : "hex" })}
+            mono
+          />
           <Separator className="my-2 bg-border" />
           <InfoRow label="Size" value="1 Byte" />
-          <InfoRow label="Bits" value={String(BITS_PER_BYTE)} mono />
-          <InfoRow label="Bit Range" value="0–7" mono />
+          {unit === "bits" ? (
+            <>
+              <InfoRow label="Bits" value={String(BITS_PER_BYTE)} mono />
+              <InfoRow label="Bit Range" value="0–7" mono />
+            </>
+          ) : null}
         </div>
       )}
     </section>
