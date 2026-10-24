@@ -9,6 +9,7 @@ import { AddressBaseSelector } from "@/components/memory/AddressBaseSelector";
 import { ZoomControls } from "@/components/memory/ZoomControls";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { CodeEditorButton } from "@/components/toolbar/CodeEditorButton";
+import { VisualizerSwitcher } from "@/components/toolbar/VisualizerSwitcher";
 import type { AddressBase, MemorySize, MemoryUnit } from "@/lib/memory/memory-types";
 
 type MemoryToolbarProps = {
@@ -43,7 +44,7 @@ export function MemoryToolbar({
   return (
     <header className="z-20 flex h-16 shrink-0 items-center gap-3 border-b border-border bg-background px-3 sm:px-4">
       <div className="min-w-0">
-        <h1 className="truncate text-sm font-semibold tracking-tight text-foreground">C Memory Visualizer</h1>
+        <VisualizerSwitcher current="memory" />
         <p className="hidden truncate text-[11px] text-muted-foreground sm:block">
           Explore memory • bits • bytes • addresses
         </p>

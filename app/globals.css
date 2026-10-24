@@ -144,6 +144,15 @@
   background-image: radial-gradient(circle, #3a3a3a 1.1px, transparent 1.2px);
 }
 
+.loop-active-line { background: rgba(45, 55, 255, 0.1); }
+.dark .loop-active-line { background: rgba(92, 102, 255, 0.2); }
+.loop-active-gutter { background: #2d37ff; width: 3px !important; margin-left: 3px; }
+
+@keyframes loop-caret-blink {
+  50% { opacity: 0; }
+}
+.loop-caret { animation: loop-caret-blink 1s steps(1) infinite; }
+
 .minimal-scroll {
   scrollbar-width: thin;
   scrollbar-color: rgba(138, 138, 138, 0.55) transparent;
